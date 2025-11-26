@@ -1,0 +1,15 @@
+{
+  "name": "openbci-bioera-com-bridge",
+  "version": "1.0.0",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "serialport": "^13.0.0"
+  }
+}
