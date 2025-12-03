@@ -138,6 +138,37 @@
    return { ok: r.ok, status: r.status, text: txt };
  }
  
+ const COLORS = {
+  yellow: (s) => `\x1b[33m${s}\x1b[0m`,
+  red:    (s) => `\x1b[31m${s}\x1b[0m`,
+};
+
+ async function sendShieldCommandWithRetry(label, cmd, maxRetries = 4) {
+   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+     const r = await sendShieldCommand(cmd);
+     logHttp(`[HTTP] /command ${label} "${cmd}" (attempt ${attempt}/${maxRetries})`, r);
+ 
+     if (r.ok) {
+       return r;
+     }
+ 
+     if (attempt < maxRetries) {
+       console.warn(
+         COLORS.yellow(
+           `[HTTP] /command ${label} "${cmd}" failed (status=${r.status}). RETRY ${attempt}/${maxRetries}…`
+         )
+       );
+     } else {
+       console.error(
+         COLORS.red(
+           `[FATAL] /command ${label} "${cmd}" failed after ${maxRetries} attempts. Exiting.`
+         )
+       );
+       process.exit(1);
+     }
+   }
+ }
+
  // /command schema differs between firmware versions; try JSON then fallback to text/plain
  async function sendShieldCommand(cmd) {
    const url = `http://${shieldIp}/command`;
@@ -396,36 +427,39 @@
    logHttp("[HTTP] /stream/stop", r);
    return r.ok;
  }
- 
- async function startStream() {
-  stats.lastStartAt = Date.now();
 
-  await stopStream();
-
+ async function applyShieldInitAndChannelConfig() {
   if (initCmd) {
-    const init = await sendShieldCommand(initCmd);
-    logHttp(`[HTTP] /command init "${initCmd}"`, init);
+    await sendShieldCommandWithRetry("init", initCmd);
   } else {
     VLOG("[Init] skipped (initCmd empty)");
   }
 
   if (channelCmds.length) {
     for (const { ch, cmd } of channelCmds) {
-      const r = await sendShieldCommand(cmd);
-      logHttp(`[HTTP] /command ch${ch} "${cmd}"`, r);
+      await sendShieldCommandWithRetry(`ch${ch}`, cmd);
     }
   } else {
     VLOG("[Channels] skipped (no CH1..CHn in .env)");
   }
-
-  return new Promise((res) => {
-    setTimeout(async () => {
-      const r = await httpGet(`http://${shieldIp}/stream/start`);
-      logHttp("[HTTP] /stream/start", r);
-      res(r.ok);
-    }, 1000);
-  });
 }
+
+ 
+ async function startStream() {
+   stats.lastStartAt = Date.now();
+
+   await stopStream();
+ 
+   await applyShieldInitAndChannelConfig();
+ 
+   return new Promise((res) => {
+     setTimeout(async () => {
+       const r = await httpGet(`http://${shieldIp}/stream/start`);
+       logHttp("[HTTP] /stream/start", r);
+       res(r.ok);
+     }, 1000);
+   });
+ }
  
  const startServer = () => {
    if (serverStarted) {
